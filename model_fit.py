@@ -44,7 +44,7 @@ def do_StepMix(data, n, msrt, covar):
         pred_clust = latent_mod.predict(data)
         
         model = 'latent'
-        params = f"msrt = {msrt}, covar = {covar}"
+        params = {'msrt': msrt, 'covar': covar}
         loglik = latent_mod.score(data)
         aic = latent_mod.aic(data)
         bic = latent_mod.aic(data)
@@ -228,7 +228,7 @@ def do_kmeans(data, n, dist, link):
     pred_clust = kmeans.fit_predict(data)
     
     model = 'kmeans'
-    params = f"dist = {dist}, link = {link}"
+    params = {'dist': dist, 'link': link}
     
     return get_metrics(model, params, n, data, pred_clust)
 
@@ -245,7 +245,7 @@ def do_AHC(data, n, dist, link):
     pred_clust = ahc.labels_
 
     model = 'AHC'
-    params = f"dist = {dist}, link = {link}"
+    params = {'dist': dist, 'link': link}
 
     return get_metrics(model, params, n, data, pred_clust)
 
@@ -273,7 +273,7 @@ def do_hdbscan(data, dist, min_c, min_s):
     pred_clust = hdb.fit_predict(data)
 
     model = 'HDBSCAN'
-    params = f"distance = {dist}, min_cluster_size = {min_c}, min_samples = {min_s}"
+    params = {'dist': dist, 'min_cluster_size': min_c, 'min_sample': min_s}
     n = len(set(pred_clust[pred_clust != -1]))
     noise_freq = 100 * sum(pred_clust == -1) / len(pred_clust)
 
