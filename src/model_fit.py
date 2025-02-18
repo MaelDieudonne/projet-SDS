@@ -6,18 +6,18 @@ from stepmix.stepmix import StepMix
 from scipy.spatial.distance import cdist, mahalanobis
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 
-from model_eval import get_metrics
+from src.model_eval import get_metrics
+
 
 
 # Latent models
-
 opt_params = {
     'method': 'gradient',
     'intercept': True,
     'max_iter': 2500,
 }
 
-def do_StepMix(data, n, msrt, covar):
+def do_StepMix(data, n, msrt, covar, refit=False):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
         
@@ -50,11 +50,13 @@ def do_StepMix(data, n, msrt, covar):
         bic = latent_mod.aic(data)
         entropy = latent_mod.entropy(data)
         
-    return get_metrics(model, params, n, data, pred_clust, LL = loglik, aic = aic, bic = bic, entropy = entropy)
+        if refit == True: 
+            return pred_clust
+        else: 
+            return get_metrics(model, params, n, data, pred_clust, LL = loglik, aic = aic, bic = bic, entropy = entropy)
 
 
 # k-means
-
 class FlexibleKMeans:
     """
     K-Means implementation supporting different distance metrics and center computation methods.
@@ -218,7 +220,7 @@ class FlexibleKMeans:
         distances = self._compute_distances(X, self.cluster_centers_)
         return np.argmin(distances, axis=1)
 
-def do_kmeans(data, n, dist, link):
+def do_kmeans(data, n, dist, link, refit=False):
     kmeans = FlexibleKMeans(
         n_clusters = n,
         metric = dist,
@@ -228,14 +230,16 @@ def do_kmeans(data, n, dist, link):
     pred_clust = kmeans.fit_predict(data)
     
     model = 'kmeans'
-    params = {'dist': dist, 'link': link}
+    params = {'dist': dist, 'link': link}    
     
-    return get_metrics(model, params, n, data, pred_clust)
+    if refit == True: 
+        return pred_clust
+    else:
+        return get_metrics(model, params, n, data, pred_clust)
 
 
 # AHC
-
-def do_AHC(data, n, dist, link):
+def do_AHC(data, n, dist, link, refit=False):
     ahc = AgglomerativeClustering(
         n_clusters = n,
         metric = dist,
@@ -247,12 +251,14 @@ def do_AHC(data, n, dist, link):
     model = 'AHC'
     params = {'dist': dist, 'link': link}
 
-    return get_metrics(model, params, n, data, pred_clust)
+    if refit == True: 
+        return pred_clust
+    else:
+        return get_metrics(model, params, n, data, pred_clust)
 
 
 # HDBSCAN
-
-def do_hdbscan(data, dist, min_c, min_s):
+def do_hdbscan(data, dist, min_clust, min_smpl, refit=False):
     if dist == 'mahalanobis':
         cov_matrix = np.cov(data, rowvar=False)  # Compute covariance
         inv_cov_matrix = np.linalg.inv(cov_matrix)  # Compute inverse
@@ -260,21 +266,24 @@ def do_hdbscan(data, dist, min_c, min_s):
         # Define a Mahalanobis distance function
         def mahalanobis_metric(a, b):
             return mahalanobis(a, b, inv_cov_matrix)
-
         dist_func = mahalanobis_metric
+        
     else:
         dist_func = dist
         
     hdb = HDBSCAN(
         metric = dist_func,
-        min_cluster_size = min_c, 
-        min_samples = min_s)
+        min_cluster_size = min_clust, 
+        min_samples = min_smpl)
         
     pred_clust = hdb.fit_predict(data)
 
     model = 'HDBSCAN'
-    params = {'dist': dist, 'min_cluster_size': min_c, 'min_sample': min_s}
+    params = {'dist': dist, 'min_clust': min_clust, 'min_smpl': min_smpl}
     n = len(set(pred_clust[pred_clust != -1]))
     noise_freq = 100 * sum(pred_clust == -1) / len(pred_clust)
 
-    return get_metrics(model, params, n, data, pred_clust, noise = noise_freq)
+    if refit == True: 
+        return pred_clust
+    else:
+        return get_metrics(model, params, n, data, pred_clust, noise = noise_freq)
