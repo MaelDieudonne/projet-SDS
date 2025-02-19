@@ -14,7 +14,7 @@ from src.model_eval import get_metrics
 opt_params = {
     'method': 'gradient',
     'intercept': True,
-    'max_iter': 2500,
+    'max_iter': 1500,
 }
 
 def do_StepMix(data, controls, n, msrt, covar, refit=False):

@@ -31,7 +31,7 @@ def create_empty_df(indices):
 
 
 # Compute the Gap Statistic
-def compute_gap_statistic(data, results, max_clust, indices, iters, model, params):
+def compute_gap_statistic(data, controls, results, max_clust, indices, iters, model, params):
     gap_values = create_empty_df(indices)
 
     # Loop over n values
@@ -47,7 +47,7 @@ def compute_gap_statistic(data, results, max_clust, indices, iters, model, param
             rand_data = gen_ref_data(data)
             
             if model == 'latent':
-                rand_scores = do_StepMix(rand_data, n, **params)
+                rand_scores = do_StepMix(rand_data, controls, n, **params)
 
             elif model == 'kmeans':
                 rand_scores = do_kmeans(rand_data, n, **params)
@@ -60,8 +60,8 @@ def compute_gap_statistic(data, results, max_clust, indices, iters, model, param
 
         # Retrive scores for the assessed model
         mod_scores = results.loc[(results['model'] == model) & 
-                                    (results['params'] == params) & 
-                                    (results['n_clust'] == n)]
+                                 (results['params'].apply(eval) == params) & 
+                                 (results['n_clust'] == n)]
 
         # Calculate the Gap statistic and s value for each validity index
         for index in indices:
