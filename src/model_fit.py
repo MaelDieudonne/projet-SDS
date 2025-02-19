@@ -17,7 +17,7 @@ opt_params = {
     'max_iter': 2500,
 }
 
-def do_StepMix(data, n, msrt, covar, refit=False):
+def do_StepMix(data, controls, n, msrt, covar, refit=False):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=FutureWarning)
         
@@ -38,22 +38,23 @@ def do_StepMix(data, n, msrt, covar, refit=False):
                 init_params = 'kmeans',
                 structural = 'covariate',
                 structural_params = opt_params,
-                progress_bar = 0)
-        
-        latent_mod.fit(data)
-        pred_clust = latent_mod.predict(data)
+                progress_bar = 1)
+            
+        latent_mod.fit(data, controls)
+        pred_clust = latent_mod.predict(data, controls)
         
         model = 'latent'
         params = {'msrt': msrt, 'covar': covar}
-        loglik = latent_mod.score(data)
-        aic = latent_mod.aic(data)
-        bic = latent_mod.aic(data)
-        entropy = latent_mod.entropy(data)
+        df = latent_mod.n_parameters
+        loglik = latent_mod.score(data, controls)
+        aic = latent_mod.aic(data, controls)
+        bic = latent_mod.bic(data, controls)
+        entropy = latent_mod.entropy(data, controls)
         
         if refit == True: 
             return pred_clust
         else: 
-            return get_metrics(model, params, n, data, pred_clust, LL = loglik, aic = aic, bic = bic, entropy = entropy)
+            return get_metrics(model, params, n, data, pred_clust, aic = aic, bic = bic, entropy = entropy, df = df, LL = loglik)
 
 
 # k-means
