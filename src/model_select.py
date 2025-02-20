@@ -31,13 +31,11 @@ def create_empty_df(indices):
 
 
 # Compute the Gap Statistic
-def compute_gap_statistic(data, controls, results, max_clust, indices, iters, model, params):
+def compute_gap_statistic(data, controls, results, max_clust, indices, iters, model, params):    
     gap_values = create_empty_df(indices)
-
-    # Loop over n values
-    if model == 'latent': n_min = 1
-    else: n_min = 2
     
+    # Loop over n values
+    n_min = 1 if model == 'latent' else 2
     for n in range(n_min, max_clust+1):
     
         # Fit the model on random datasets
@@ -60,8 +58,9 @@ def compute_gap_statistic(data, controls, results, max_clust, indices, iters, mo
 
         # Retrive scores for the assessed model
         mod_scores = results.loc[(results['model'] == model) & 
-                                 (results['params'].apply(eval) == params) & 
+                                 (results['params'] == params) & 
                                  (results['n_clust'] == n)]
+# (results['params'].apply(eval) == params)
 
         # Calculate the Gap statistic and s value for each validity index
         for index in indices:
