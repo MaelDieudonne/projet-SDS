@@ -5,103 +5,71 @@ from src.model_fit import do_StepMix, do_kmeans, do_AHC, do_hdbscan
 
 
 
-# Generate reference data from a uniform distribution
-def gen_ref_data(data):
-    return np.random.uniform(low=data.min(axis=0), 
-                             high=data.max(axis=0), 
-                             size=data.shape)
-
-
-# Create empty df to store results
-def create_empty_df(indices):
-    cols = ['model', 'params', 'n_clust'] + \
-       [f'{index}_gs' for index in indices] + \
-       [f'{index}_s' for index in indices]
+def bootstrap_model(data, controls, n, model, params, iter_num):
+    # Create random dataset
+    rand_data = np.random.uniform(
+        low=data.min(axis=0), 
+        high=data.max(axis=0), 
+        size=data.shape)
     
-    df = pd.DataFrame(columns=cols)
-
-    float_cols = [col for col in cols if col not in ['model', 'params', 'n_clust']]
-    df[float_cols] = df[float_cols].astype('float64')
+    # Fit model
+    if model == 'latent':
+        res = do_StepMix(rand_data, controls, n, **params)
+    elif model == 'kmeans':
+        res = do_kmeans(rand_data, n, **params)
+    elif model == 'AHC':
+        res = do_AHC(rand_data, n, **params)
     
-    df['model'] = df['model'].astype('object')
-    df['params'] = df['params'].astype('object')
-    df['n_clust'] = df['n_clust'].astype('int64')
-
-    return df
-
-
-# Compute the Gap Statistic
-def compute_gap_statistic(data, controls, results, max_clust, indices, iters, model, params):    
-    gap_values = create_empty_df(indices)
+    # Add iteration number
+    res = pd.DataFrame([res])
+    res['bootstrap_iter'] = iter_num + 1
     
-    # Loop over n values
-    n_min = 1 if model == 'latent' else 2
-    for n in range(n_min, max_clust+1):
+    return res
+
+
+def compute_gap_statistics(bootstrap_results, model_results, model, params, indices):
+    gap_values = pd.DataFrame()
+
+    grouped = bootstrap_results.groupby('n_clust')
     
-        # Fit the model on random datasets
-        rand_scores_all = pd.DataFrame()
+    for n_clust, group in grouped:
+        # Get corresponding model score
+        mod_scores = model_results.loc[
+            (model_results['model'] == model) & 
+            (model_results['params'] == params) &
+            (model_results['n_clust'] == n_clust)
+        ]
         
-        for _ in range(iters):
-            rand_data = gen_ref_data(data)
-            
-            if model == 'latent':
-                rand_scores = do_StepMix(rand_data, controls, n, **params)
-
-            elif model == 'kmeans':
-                rand_scores = do_kmeans(rand_data, n, **params)
-
-            elif model == 'AHC':
-                rand_scores = do_AHC(rand_data, n, **params)
-            
-            rand_scores = pd.DataFrame([rand_scores])
-            rand_scores_all = pd.concat([rand_scores_all, rand_scores], ignore_index=True)
-
-        # Retrive scores for the assessed model
-        mod_scores = results.loc[(results['model'] == model) & 
-                                 (results['params'] == params) & 
-                                 (results['n_clust'] == n)]
-# (results['params'].apply(eval) == params)
-
-        # Calculate the Gap statistic and s value for each validity index
+        row_data = {
+            'model': model,
+            'params': params,
+            'n_clust': n_clust
+        }
+        
+        # Calculate gap statistic for each index
         for index in indices:
-            rand_ind = rand_scores_all[index]
+            rand_ind = group[index]
             mod_ind = mod_scores[index]
-
-            # Rescale the Silhouette index on [0,1] to avoid errors when it is negative
+            
+            # Rescale Silhouette index if needed
             if index == 'silhouette':
                 rand_ind = (rand_ind + 1) / 2
                 mod_ind = (mod_ind + 1) / 2
-                
-            gap = np.log(np.mean(rand_ind)) - np.log(mod_ind)
-            s = np.std(np.log(rand_ind)) * np.sqrt(1 + (1 / iters))
-
-            # Store the results
-            ## Check if the corresponding row exists in the df
-            row_id = ((gap_values['model'] == model) & 
-                      (gap_values['params'] == params) & 
-                      (gap_values['n_clust'] == n))
-
-            if gap_values[row_id].empty:
-            ## If not, create a new one
-                new_row = {
-                    'model': model,
-                    'params': params,
-                    'n_clust': n,
-                    f'{index}_gs': gap.values[0],
-                    f'{index}_s': s
-                }
-                new_row = pd.DataFrame([new_row])
-                gap_values = pd.concat([gap_values, new_row], ignore_index=True)
             
-            else:
-            # Otherwise, update the existing row
-                gap_values.loc[row_id, f'{index}_gs'] = gap.values[0]
-                gap_values.loc[row_id, f'{index}_s'] = s
-
+            # Calculate gap statistic and s value
+            gap = np.log(np.mean(rand_ind)) - np.log(mod_ind)
+            s = np.std(np.log(rand_ind)) * np.sqrt(1 + (1 / len(group)))
+            
+            # Add to row data
+            row_data[f'{index}_gs'] = gap.values[0]
+            row_data[f'{index}_s'] = s
+        
+        # Append to results
+        gap_values = pd.concat([gap_values, pd.DataFrame([row_data])], ignore_index=True)
+    
     return gap_values
 
 
-# Select the optimal number of clusters
 def get_best_gap(gap_values, model, params, index):
     # Subset gap_values to the right model and params
     rows_id = ((gap_values['model'] == model) & (gap_values['params'] == params))

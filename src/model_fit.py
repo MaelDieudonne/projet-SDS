@@ -8,53 +8,53 @@ from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 
 from src.model_eval import get_metrics
 
+# Avoid warnings because of deprecated functions in StepMix
+warnings.filterwarnings('ignore', module='sklearn.*', category=FutureWarning)
+
 
 
 # Latent models
 opt_params = {
     'method': 'gradient',
     'intercept': True,
-    'max_iter': 1500,
+    'max_iter': 1000,
 }
 
 def do_StepMix(data, controls, n, msrt, covar, refit=False):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=FutureWarning)
+    if covar == 'without':
+        latent_mod = StepMix(
+            n_components = n,
+            measurement = msrt,
+            n_init = 3,
+            init_params = 'kmeans',
+            structural_params = opt_params,
+            progress_bar = 0)
         
-        if covar == 'without':
-            latent_mod = StepMix(
-                n_components = n,
-                measurement = msrt,
-                n_init = 3,
-                init_params = 'kmeans',
-                structural_params = opt_params,
-                progress_bar = 0)
-        
-        elif covar == 'with':
-            latent_mod = StepMix(
-                n_components = n,
-                measurement = msrt,
-                n_init = 3,
-                init_params = 'kmeans',
-                structural = 'covariate',
-                structural_params = opt_params,
-                progress_bar = 1)
+    elif covar == 'with':
+        latent_mod = StepMix(
+            n_components = n,
+            measurement = msrt,
+            n_init = 3,
+            init_params = 'kmeans',
+            structural = 'covariate',
+            structural_params = opt_params,
+            progress_bar = 1)
             
-        latent_mod.fit(data, controls)
-        pred_clust = latent_mod.predict(data, controls)
+    latent_mod.fit(data, controls)
+    pred_clust = latent_mod.predict(data, controls)
         
-        model = 'latent'
-        params = {'msrt': msrt, 'covar': covar}
-        df = latent_mod.n_parameters
-        loglik = latent_mod.score(data, controls)
-        aic = latent_mod.aic(data, controls)
-        bic = latent_mod.bic(data, controls)
-        entropy = latent_mod.entropy(data, controls)
+    model = 'latent'
+    params = {'msrt': msrt, 'covar': covar}
+    df = latent_mod.n_parameters
+    loglik = latent_mod.score(data, controls)
+    aic = latent_mod.aic(data, controls)
+    bic = latent_mod.bic(data, controls)
+    entropy = latent_mod.entropy(data, controls)
         
-        if refit == True: 
-            return pred_clust
-        else: 
-            return get_metrics(model, params, n, data, pred_clust, aic = aic, bic = bic, entropy = entropy, df = df, LL = loglik)
+    if refit == True: 
+        return pred_clust
+    else: 
+        return get_metrics(model, params, n, data, pred_clust, aic = aic, bic = bic, entropy = entropy, df = df, LL = loglik)
 
 
 # k-means
