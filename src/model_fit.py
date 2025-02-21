@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 import warnings
 
-from stepmix.stepmix import StepMix
 from scipy.spatial.distance import cdist, mahalanobis
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
+from stepmix.stepmix import StepMix
 
 from src.model_eval import get_metrics, local_bvr, bvr_test
 

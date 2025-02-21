@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from sklearn.decomposition import PCA
 from scipy.spatial import ConvexHull
+from sklearn.decomposition import PCA
 
 
 
