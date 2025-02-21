@@ -6,21 +6,22 @@ from stepmix.stepmix import StepMix
 from scipy.spatial.distance import cdist, mahalanobis
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 
-from src.model_eval import get_metrics
+from src.model_eval import get_metrics, local_bvr, bvr_test
+
+
+
+##### Latent models #####
 
 # Avoid warnings because of deprecated functions in StepMix
 warnings.filterwarnings('ignore', module='sklearn.*', category=FutureWarning)
 
-
-
-# Latent models
 opt_params = {
     'method': 'gradient',
     'intercept': True,
     'max_iter': 1000,
 }
 
-def do_StepMix(data, controls, n, msrt, covar, refit=False):
+def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
     if covar == 'without':
         latent_mod = StepMix(
             n_components = n,
@@ -38,26 +39,46 @@ def do_StepMix(data, controls, n, msrt, covar, refit=False):
             init_params = 'kmeans',
             structural = 'covariate',
             structural_params = opt_params,
-            progress_bar = 1)
+            progress_bar = 0)
             
     latent_mod.fit(data, controls)
     pred_clust = latent_mod.predict(data, controls)
-        
-    model = 'latent'
-    params = {'msrt': msrt, 'covar': covar}
-    df = latent_mod.n_parameters
-    loglik = latent_mod.score(data, controls)
-    aic = latent_mod.aic(data, controls)
-    bic = latent_mod.bic(data, controls)
-    entropy = latent_mod.entropy(data, controls)
-        
+
     if refit == True: 
         return pred_clust
-    else: 
-        return get_metrics(model, params, n, data, pred_clust, aic = aic, bic = bic, entropy = entropy, df = df, LL = loglik)
+
+    else:
+        if msrt == 'categorical':
+            # Extract model coefficients
+            coeffs = latent_mod.get_parameters_df()
+            coeffs = coeffs.reset_index()
+            coeffs = coeffs[['class_no', 'variable', 'value']]
+            # Extract posterior probabilities
+            post_probs = latent_mod.predict_proba(data)
+            # Compute the chi2 stat with one-hot encoded data
+            stats = bvr_test(bvr_data, post_probs, coeffs)
+            chi2 = stats['total_chi2']
+            chi2_df = stats['total_df']
+            chi2_pval = stats['p_value']
+        else: 
+            chi2 = np.nan
+            chi2_df = np.nan
+            chi2_pval = np.nan
+    
+        model = 'latent'
+        params = {'msrt': msrt, 'covar': covar}
+        df = latent_mod.n_parameters
+        loglik = latent_mod.score(data, controls)
+        aic = latent_mod.aic(data, controls)
+        bic = latent_mod.bic(data, controls)
+        entropy = latent_mod.entropy(data, controls)
+
+        return get_metrics(model, params, n, data, pred_clust, aic = aic, bic = bic, entropy = entropy, df = df, LL = loglik, chi2 = chi2, chi2_df = chi2_df, chi2_pval = chi2_pval)
 
 
-# k-means
+
+##### k-means #####
+
 class FlexibleKMeans:
     """
     K-Means implementation supporting different distance metrics and center computation methods.
@@ -221,6 +242,7 @@ class FlexibleKMeans:
         distances = self._compute_distances(X, self.cluster_centers_)
         return np.argmin(distances, axis=1)
 
+    
 def do_kmeans(data, n, dist, link, refit=False):
     kmeans = FlexibleKMeans(
         n_clusters = n,
@@ -239,7 +261,9 @@ def do_kmeans(data, n, dist, link, refit=False):
         return get_metrics(model, params, n, data, pred_clust)
 
 
-# AHC
+    
+##### AHC #####
+
 def do_AHC(data, n, dist, link, refit=False):
     ahc = AgglomerativeClustering(
         n_clusters = n,
@@ -258,7 +282,9 @@ def do_AHC(data, n, dist, link, refit=False):
         return get_metrics(model, params, n, data, pred_clust)
 
 
-# HDBSCAN
+
+##### HDBSCAN #####
+
 def do_hdbscan(data, dist, min_clust, min_smpl, refit=False):
     if dist == 'mahalanobis':
         cov_matrix = np.cov(data, rowvar=False)  # Compute covariance

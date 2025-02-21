@@ -1,13 +1,16 @@
 import numpy as np
+import pandas as pd
 
 from collections import Counter
 from scipy.spatial.distance import cdist
+from scipy.stats import chi2
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.metrics.pairwise import pairwise_distances
 
 
+##### For all models #####
 
-# Functions to avoid throwing errors when the CVI is undefined
+# Avoid throwing errors when a CVI is undefined
 def sil_score(data, pred_clust):
     try: 
         sil_score = silhouette_score(data, pred_clust, metric='manhattan')
@@ -78,7 +81,7 @@ def dunn_score(data, pred_clust, metric='euclidean'):
     return dunn_score
 
 
-# Return clusters min an max sizes
+# Clusters min an max sizes
 def clust_size(pred_clust):
     cluster_sizes = Counter(pred_clust)
     min_size = min(cluster_sizes.values())
@@ -109,3 +112,61 @@ def get_metrics(model, params, n, data, pred_clust, **additional_metrics):
 
     base_metrics.update(additional_metrics)
     return base_metrics
+
+
+
+##### For LCA #####
+
+# Compute local bivariate residuals
+def local_bvr(data, post_probs, coeffs, var1, var2):
+    # Get number of classes and observations
+    n_classes = post_probs.shape[1]
+    n_obs = len(data)
+    
+    # Get observed contingency table
+    observed = pd.crosstab(data[var1], data[var2])
+    
+    # Calculate expected frequencies under the model
+    expected = np.zeros((2, 2))
+    
+    # For each class
+    for k in range(n_classes):
+        # Get class membership probability
+        class_prob = post_probs[:, k].mean()
+    
+        # Get probabilities for var1 and var 2 in class k
+        prob_var1 = coeffs[(coeffs['class_no'] == k) & (coeffs['variable'] == var1)]['value'].values.item()
+        prob_var2 = coeffs[(coeffs['class_no'] == k) & (coeffs['variable'] == var2)]['value'].values.item()
+
+        # Calculate expected frequencies for this class
+        expected[0, 0] += n_obs * (1 - prob_var1) * (1 - prob_var2) * class_prob
+        expected[0, 1] += n_obs * (1 - prob_var1) * prob_var2 * class_prob
+        expected[1, 0] += n_obs * prob_var1 * (1 - prob_var2) * class_prob
+        expected[1, 1] += n_obs * prob_var1 * prob_var2 * class_prob 
+        
+    expected = pd.DataFrame(expected)
+    
+    # Calculate chi2 stat
+    chi2_stat = (((observed - expected)**2)/expected).sum().sum()
+    
+    return chi2_stat
+
+
+# Compute the global chi2 value
+def bvr_test(data, post_probs, coeffs):
+    variables = data.columns
+    total_chi2 = 0
+    total_df = 0
+    individual_bvrs = []
+    
+    for i, var1 in enumerate(variables):
+        for j, var2 in enumerate(variables):
+            if i < j:
+                total_chi2 += local_bvr(data, post_probs, coeffs, var1, var2)
+                total_df += 1
+    
+    global_p_value = 1 - chi2.cdf(total_chi2, total_df)
+    
+    return {'total_chi2': total_chi2,
+            'total_df': total_df,
+            'p_value': global_p_value}

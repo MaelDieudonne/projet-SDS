@@ -5,16 +5,20 @@ from src.model_fit import do_StepMix, do_kmeans, do_AHC, do_hdbscan
 
 
 
-def bootstrap_model(data, controls, n, model, params, iter_num):
+def bootstrap_model(data, controls, bvr_data, n, model, params, iter_num):
     # Create random dataset
-    rand_data = np.random.uniform(
-        low=data.min(axis=0), 
-        high=data.max(axis=0), 
-        size=data.shape)
+    rand_data = np.random.uniform(low=data.min(axis=0),
+                                  high=data.max(axis=0) + 1,
+                                  size=data.shape)
+    rand_data = pd.DataFrame(rand_data, columns=data.columns)
     
     # Fit model
     if model == 'latent':
-        res = do_StepMix(rand_data, controls, n, **params)
+        res = do_StepMix(rand_data,
+                         controls if params.get('covar') == 'with' else None,
+                         bvr_data if params.get('msrt') == 'categorical' else None,
+                         n,
+                         **params)
     elif model == 'kmeans':
         res = do_kmeans(rand_data, n, **params)
     elif model == 'AHC':
