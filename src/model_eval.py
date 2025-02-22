@@ -34,7 +34,7 @@ def db_score(data, pred_clust):
 
 
 # Function to compute the Dunn score 43
-def dunn_score(data, pred_clust, metric='euclidean'):
+def dunn_score(data, pred_clust, metric='cityblock'):
     data = np.asarray(data)
     pred_clust = np.asarray(pred_clust)
     clusters = np.unique(pred_clust)

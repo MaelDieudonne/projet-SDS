@@ -26,7 +26,9 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         latent_mod = StepMix(
             n_components = n,
             measurement = msrt,
-            n_init = 3,
+            n_init = 5,
+            abs_tol=1e-7,
+            rel_tol=1e-7,
             init_params = 'kmeans',
             structural_params = opt_params,
             progress_bar = 0)
@@ -35,7 +37,9 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         latent_mod = StepMix(
             n_components = n,
             measurement = msrt,
-            n_init = 3,
+            n_init = 5,
+            abs_tol=1e-7,
+            rel_tol=1e-7,
             init_params = 'kmeans',
             structural = 'covariate',
             structural_params = opt_params,
@@ -73,7 +77,20 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         bic = latent_mod.bic(data, controls)
         entropy = latent_mod.entropy(data, controls)
 
-        return get_metrics(model, params, n, data, pred_clust, aic = aic, bic = bic, entropy = entropy, df = df, LL = loglik, chi2 = chi2, chi2_df = chi2_df, chi2_pval = chi2_pval)
+        return get_metrics(
+            model,
+            params,
+            n, data,
+            pred_clust,
+            aic = aic,
+            bic = bic,
+            entropy = entropy,
+            df = df,
+            LL = loglik,
+            chi2 = chi2,
+            chi2_df = chi2_df,
+            chi2_pval = chi2_pval
+        )
 
 
 
