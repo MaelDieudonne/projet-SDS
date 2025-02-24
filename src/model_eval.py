@@ -3,7 +3,6 @@ import pandas as pd
 
 from collections import Counter
 from scipy.spatial.distance import cdist
-from scipy.stats import chi2
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.metrics.pairwise import pairwise_distances
 
@@ -118,7 +117,7 @@ def get_metrics(model, params, n, data, pred_clust, **additional_metrics):
 ##### For LCA #####
 
 # Compute local bivariate residuals
-def local_bvr(data, post_probs, coeffs, var1, var2):
+def local_chi2(data, post_probs, coeffs, var1, var2):
     # Get number of classes and observations
     n_classes = post_probs.shape[1]
     n_obs = len(data)
@@ -147,26 +146,19 @@ def local_bvr(data, post_probs, coeffs, var1, var2):
     expected = pd.DataFrame(expected)
     
     # Calculate chi2 stat
-    chi2_stat = (((observed - expected)**2)/expected).sum().sum()
-    
-    return chi2_stat
+    local_chi2 = (((observed - expected)**2)/expected).sum().sum()
+
+    return local_chi2
 
 
 # Compute the global chi2 value
-def bvr_test(data, post_probs, coeffs):
+def global_chi2(data, post_probs, coeffs):
     variables = data.columns
-    total_chi2 = 0
-    total_df = 0
-    individual_bvrs = []
+    global_chi2 = 0
     
     for i, var1 in enumerate(variables):
         for j, var2 in enumerate(variables):
             if i < j:
-                total_chi2 += local_bvr(data, post_probs, coeffs, var1, var2)
-                total_df += 1
+                global_chi2 += local_chi2(data, post_probs, coeffs, var1, var2)
     
-    global_p_value = 1 - chi2.cdf(total_chi2, total_df)
-    
-    return {'total_chi2': total_chi2,
-            'total_df': total_df,
-            'p_value': global_p_value}
+    return global_chi2

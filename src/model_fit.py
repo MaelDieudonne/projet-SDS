@@ -3,10 +3,11 @@ import numpy as np
 import warnings
 
 from scipy.spatial.distance import cdist, mahalanobis
+from scipy.stats import chi2
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 from stepmix.stepmix import StepMix
 
-from src.model_eval import get_metrics, local_bvr, bvr_test
+from src.model_eval import get_metrics, local_chi2, global_chi2
 
 
 
@@ -57,16 +58,19 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
             coeffs = latent_mod.get_parameters_df()
             coeffs = coeffs.reset_index()
             coeffs = coeffs[['class_no', 'variable', 'value']]
-            # Extract posterior probabilities
-            post_probs = latent_mod.predict_proba(data)
-            # Compute the chi2 stat with one-hot encoded data
-            stats = bvr_test(bvr_data, post_probs, coeffs)
-            chi2 = stats['total_chi2']
-            chi2_df = stats['total_df']
-            chi2_pval = stats['p_value']
-        else: 
-            chi2 = np.nan
-            chi2_df = np.nan
+            # Extract posterior and modal probabilities
+            post_probs = latent_mod.predict_proba(data, controls)
+            mod_probs = np.max(post_probs, axis=1)
+            # Compute classification error
+            classif_error =  (1 - mod_probs).sum() / len(data)
+            # Compute the chi2 stat (with one-hot encoded data), df (with original data) and p-val
+            chi2_stat = global_chi2(bvr_data, post_probs, coeffs)
+            V = data.shape[1]
+            chi2_df = (V*(V-1)/2) * (5-1)**2
+            chi2_pval = 1 - chi2.cdf(chi2_stat, chi2_df)
+        else:
+            classif_error = np.nan
+            chi2_stat = np.nan
             chi2_pval = np.nan
     
         model = 'latent'
@@ -75,6 +79,7 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         loglik = latent_mod.score(data, controls)
         aic = latent_mod.aic(data, controls)
         bic = latent_mod.bic(data, controls)
+        sabic = latent_mod.sabic(data, controls)
         entropy = latent_mod.entropy(data, controls)
 
         return get_metrics(
@@ -84,12 +89,13 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
             pred_clust,
             aic = aic,
             bic = bic,
+            sabic = sabic,
             entropy = entropy,
             df = df,
             LL = loglik,
-            chi2 = chi2,
-            chi2_df = chi2_df,
-            chi2_pval = chi2_pval
+            chi2_stat = chi2_stat,
+            chi2_pval = chi2_pval,
+            classif_error = classif_error
         )
 
 
