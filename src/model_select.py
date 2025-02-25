@@ -5,7 +5,7 @@ from src.model_fit import do_StepMix, do_kmeans, do_AHC, do_hdbscan
 
 
 
-def bootstrap_model(data, controls, bvr_data, n, model, params, iter_num):
+def bootstrap_gap(data, controls, bvr_data, n, model, params, iter_num):
     # Create random dataset
     rand_data = np.random.uniform(low=data.min(axis=0),
                                   high=data.max(axis=0) + 1,
@@ -31,7 +31,7 @@ def bootstrap_model(data, controls, bvr_data, n, model, params, iter_num):
     return res
 
 
-def compute_gap_statistics(bootstrap_results, model_results, model, params, indices):
+def compute_gap(bootstrap_results, model_results, model, params, indices):
     gap_values = pd.DataFrame()
 
     grouped = bootstrap_results.groupby('n_clust')
@@ -74,7 +74,7 @@ def compute_gap_statistics(bootstrap_results, model_results, model, params, indi
     return gap_values
 
 
-def get_best_gap(gap_values, model, params, index):
+def get_gap(gap_values, model, params, index):
     # Subset gap_values to the right model and params
     rows_id = ((gap_values['model'] == model) & (gap_values['params'] == params))
     df = gap_values[rows_id].reset_index(drop=True)
