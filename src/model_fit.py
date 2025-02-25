@@ -53,46 +53,40 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         return pred_clust
 
     else:
+        # Extract model coefficients
+        coeffs = latent_mod.get_parameters_df()
+        coeffs = coeffs.reset_index()
+        coeffs = coeffs[['class_no', 'variable', 'value']]
+        # Extract posterior and modal probabilities
+        post_probs = latent_mod.predict_proba(data, controls)
+        mod_probs = np.max(post_probs, axis=1)
+        # Compute classification error
+        classif_error =  (1 - mod_probs).sum() / len(data)
+        
         if msrt == 'categorical':
-            # Extract model coefficients
-            coeffs = latent_mod.get_parameters_df()
-            coeffs = coeffs.reset_index()
-            coeffs = coeffs[['class_no', 'variable', 'value']]
-            # Extract posterior and modal probabilities
-            post_probs = latent_mod.predict_proba(data, controls)
-            mod_probs = np.max(post_probs, axis=1)
-            # Compute classification error
-            classif_error =  (1 - mod_probs).sum() / len(data)
-            # Compute the chi2 stat (with one-hot encoded data), df (with original data) and p-val
+            # Chi2 stat with one-hot encoded data and p-val
             chi2_stat = global_chi2(bvr_data, post_probs, coeffs)
+            # Chi2 df with original data
             V = data.shape[1]
             chi2_df = (V*(V-1)/2) * (5-1)**2
+            # Chi2 pval
             chi2_pval = 1 - chi2.cdf(chi2_stat, chi2_df)
         else:
-            classif_error = np.nan
             chi2_stat = np.nan
             chi2_pval = np.nan
     
-        model = 'latent'
-        params = {'msrt': msrt, 'covar': covar}
-        df = latent_mod.n_parameters
-        loglik = latent_mod.score(data, controls)
-        aic = latent_mod.aic(data, controls)
-        bic = latent_mod.bic(data, controls)
-        sabic = latent_mod.sabic(data, controls)
-        entropy = latent_mod.entropy(data, controls)
-
         return get_metrics(
-            model,
-            params,
-            n, data,
-            pred_clust,
-            aic = aic,
-            bic = bic,
-            sabic = sabic,
-            entropy = entropy,
-            df = df,
-            LL = loglik,
+            model = 'latent',
+            params = {'msrt': msrt, 'covar': covar},
+            n = n,
+            data = data,
+            pred_clust = pred_clust,
+            aic = latent_mod.aic(data, controls),
+            bic = latent_mod.bic(data, controls),
+            sabic = latent_mod.sabic(data, controls),
+            relative_entropy = latent_mod.relative_entropy(data, controls),
+            df = latent_mod.n_parameters,
+            LL = latent_mod.score(data, controls),
             chi2_stat = chi2_stat,
             chi2_pval = chi2_pval,
             classif_error = classif_error
