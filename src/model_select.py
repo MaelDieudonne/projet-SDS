@@ -1,24 +1,29 @@
 import pandas as pd
 import numpy as np
+#import warnings
 
-from src.model_fit import do_StepMix, do_kmeans, do_AHC, do_hdbscan
+from src.model_eval import local_stats, global_stats
+from src.model_fit import build_latent_model, do_StepMix, do_kmeans, do_AHC, do_hdbscan
 
 
+
+##### Gap statistic #####
 
 def bootstrap_gap(data, controls, bvr_data, n, model, params, iter_num):
-    # Create random dataset
+    # Create a random dataset
     rand_data = np.random.uniform(low=data.min(axis=0),
                                   high=data.max(axis=0) + 1,
                                   size=data.shape)
     rand_data = pd.DataFrame(rand_data, columns=data.columns)
     
-    # Fit model
+    # Fit the model
     if model == 'latent':
-        res = do_StepMix(rand_data,
-                         controls if params.get('covar') == 'with' else None,
-                         bvr_data if params.get('msrt') == 'categorical' else None,
-                         n,
-                         **params)
+        res = do_StepMix(
+            rand_data,
+            controls if params.get('covar') == 'with' else None,
+            bvr_data if params.get('msrt') == 'categorical' else None,
+            n,
+            **params)
     elif model == 'kmeans':
         res = do_kmeans(rand_data, n, **params)
     elif model == 'AHC':
@@ -101,3 +106,82 @@ def get_gap(gap_values, model, params, index):
         best_n = int(stats[np.argmin(stats[:, 1]), 0])
 
     return best_n
+
+
+
+##### Boostrap Chi2 for latent models #####
+
+def baseline_chi2(data, bvr_data, n, covar, controls):
+    # Refit model
+    latent_mod = build_latent_model(n, 'categorical', covar)
+    #warnings.filterwarnings('ignore', module='sklearn.*', category=FutureWarning)
+    latent_mod = latent_mod.fit(data, controls)
+
+    # Extract coefficients and posterior probabilities
+    coeffs = latent_mod.get_parameters_df()
+    coeffs = coeffs.reset_index()
+    coeffs = coeffs[['class_no', 'variable', 'value']]
+    post_probs = latent_mod.predict_proba(data, controls)
+
+    # Reference l2
+    mod_probs = np.max(post_probs, axis=1)
+    l2_stat, chi2_stat = global_stats(bvr_data, post_probs, coeffs)
+#bvr_datad=data_f_oh 
+    # Build the most likely dataset under the model
+    ref_data = pd.DataFrame()
+
+    for var in data.columns:
+        df = []
+    
+        for i in range(5):
+            var_f = f'{var}_{i}'
+            col = np.zeros(data.shape[0])
+
+            for k in range(n):
+                coeff_id = (coeffs['class_no'] == k) & (coeffs['variable'] == var_f)
+                coeff_value = coeffs.loc[coeff_id, 'value'].values[0]
+                col += coeff_value * post_probs[:, k]
+
+            df.append(pd.DataFrame(col, columns=[var_f]))
+
+        # Convert to binary using the most likely value
+        temp = pd.concat(df, axis=1)
+        temp = temp.apply(lambda row: (row == row.max()).astype(int), axis=1)
+
+        # Convert to label encoding
+        temp = temp.idxmax(axis=1).str.extract(r'(\d+)').astype(int).squeeze()
+        temp = pd.DataFrame(temp.tolist(), columns=[var])
+        ref_data = pd.concat([ref_data, temp], axis=1)
+        
+    return l2_stat, ref_data
+
+
+def bootstrap_chi2(ref_data, controls, n, covar, iter_num):
+    # Draw random sample with replacement
+    btsp_sample = ref_data.sample(len(ref_data), replace=True)
+
+    # One-hot encoding for BVR computation
+    columns = []
+    for col in btsp_sample.columns:
+        for val in btsp_sample[col].unique():
+            columns.append((btsp_sample[col] == val).astype(int).rename(f'{col}_{val}'))
+    btsp_sample_oh = pd.concat(columns, axis=1)
+    ## Drop empty columns to keep dimension coherent with model output
+    btsp_sample_oh = btsp_sample_oh.loc[:, (btsp_sample_oh != 0).any()]
+    
+    # Fit the model
+    latent_mod = build_latent_model(n, 'categorical', covar)
+    
+    # warnings.filterwarnings('ignore', module='sklearn.*', category=FutureWarning)
+    latent_mod.fit(
+        btsp_sample,
+        controls_dum if covar == 'with' else None)
+
+    # Compute l2 stat
+    coeffs = latent_mod.get_parameters_df()
+    coeffs = coeffs.reset_index()
+    coeffs = coeffs[['class_no', 'variable', 'value']]
+    post_probs = latent_mod.predict_proba(btsp_sample, controls)  
+    l2_stat, chi2_stat = global_stats(btsp_sample_oh, post_probs, coeffs)
+
+    return l2_stat

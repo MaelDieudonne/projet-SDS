@@ -116,14 +116,15 @@ def get_metrics(model, params, n, data, pred_clust, **additional_metrics):
 
 ##### For LCA #####
 
-# Compute local bivariate residuals
-def local_chi2(data, post_probs, coeffs, var1, var2):
+# Compute local L2 and Chi2
+def local_stats(data, post_probs, coeffs, var1, var2):
     # Get number of classes and observations
     n_classes = post_probs.shape[1]
     n_obs = len(data)
     
     # Get observed contingency table
     observed = pd.crosstab(data[var1], data[var2])
+    observed = observed.reindex(index=[0,1], columns=[0,1], fill_value=0)
     
     # Calculate expected frequencies under the model
     expected = np.zeros((2, 2))
@@ -145,20 +146,25 @@ def local_chi2(data, post_probs, coeffs, var1, var2):
         
     expected = pd.DataFrame(expected)
     
-    # Calculate chi2 stat
-    local_chi2 = (((observed - expected)**2)/expected).sum().sum()
+    # Calculate l2 and chi2 contributions, eliminating errors caused by log(0)
+    array = np.where((observed > 0) & (expected > 0), observed / expected, 1)
+    local_l2 = (2 * observed * np.log(array)).sum().sum()
+    local_chi2 = (((observed - expected) ** 2) / expected).sum().sum()
 
-    return local_chi2
+    return local_l2, local_chi2
 
 
-# Compute the global chi2 value
-def global_chi2(data, post_probs, coeffs):
+# Compute global L2 and Chi2
+def global_stats(data, post_probs, coeffs):
     variables = data.columns
+    global_l2 = 0
     global_chi2 = 0
     
     for i, var1 in enumerate(variables):
         for j, var2 in enumerate(variables):
             if i < j:
-                global_chi2 += local_chi2(data, post_probs, coeffs, var1, var2)
+                local_l2, local_chi2 = local_stats(data, post_probs, coeffs, var1, var2)
+                global_l2 += local_l2
+                global_chi2 += local_chi2
     
-    return global_chi2
+    return global_l2, global_chi2

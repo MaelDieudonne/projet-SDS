@@ -7,7 +7,7 @@ from scipy.stats import chi2
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 from stepmix.stepmix import StepMix
 
-from src.model_eval import get_metrics, local_chi2, global_chi2
+from src.model_eval import get_metrics, local_stats, global_stats
 
 
 
@@ -16,18 +16,16 @@ from src.model_eval import get_metrics, local_chi2, global_chi2
 # Avoid warnings because of deprecated functions in StepMix
 warnings.filterwarnings('ignore', module='sklearn.*', category=FutureWarning)
 
-opt_params = {
-    'method': 'gradient',
-    'intercept': True,
-    'max_iter': 1000,
-}
-
-def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
+def build_latent_model(n, msrt, covar):
+    opt_params = {'method': 'gradient',
+              'intercept': True,
+              'max_iter': 500}
+    
     if covar == 'without':
         latent_mod = StepMix(
             n_components = n,
             measurement = msrt,
-            n_init = 5,
+            n_init = 3,
             abs_tol=1e-4,
             rel_tol=1e-4,
             init_params = 'kmeans',
@@ -38,14 +36,19 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         latent_mod = StepMix(
             n_components = n,
             measurement = msrt,
-            n_init = 5,
+            n_init = 3,
             abs_tol=1e-4,
             rel_tol=1e-4,
             init_params = 'kmeans',
             structural = 'covariate',
             structural_params = opt_params,
             progress_bar = 0)
-            
+
+    return latent_mod
+
+
+def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
+    latent_mod = build_latent_model(n, msrt, covar)      
     latent_mod.fit(data, controls)
     pred_clust = latent_mod.predict(data, controls)
 
@@ -53,6 +56,8 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         return pred_clust
 
     else:
+        mod_df = latent_mod.n_parameters
+        
         # Extract model coefficients
         coeffs = latent_mod.get_parameters_df()
         coeffs = coeffs.reset_index()
@@ -64,14 +69,18 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         classif_error =  (1 - mod_probs).sum() / len(data)
         
         if msrt == 'categorical':
-            # Chi2 stat with one-hot encoded data and p-val
-            chi2_stat = global_chi2(bvr_data, post_probs, coeffs)
+            # L2 and Chi2 stats with one-hot encoded data and p-val
+            l2_stat, chi2_stat = global_stats(bvr_data, post_probs, coeffs)
+            # L2 pval
+            l2_pval = 1 - chi2.cdf(l2_stat, mod_df)
             # Chi2 df with original data
             V = data.shape[1]
             chi2_df = (V*(V-1)/2) * (5-1)**2
             # Chi2 pval
             chi2_pval = 1 - chi2.cdf(chi2_stat, chi2_df)
         else:
+            l2_stat = np.nan
+            l2_pval = np.nan
             chi2_stat = np.nan
             chi2_pval = np.nan
     
@@ -85,12 +94,13 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
             bic = latent_mod.bic(data, controls),
             sabic = latent_mod.sabic(data, controls),
             relative_entropy = latent_mod.relative_entropy(data, controls),
-            df = latent_mod.n_parameters,
+            classif_error = classif_error,
+            df = mod_df,
             LL = latent_mod.score(data, controls),
+            l2_stat = l2_stat,
+            l2_pval = l2_pval,
             chi2_stat = chi2_stat,
-            chi2_pval = chi2_pval,
-            classif_error = classif_error
-        )
+            chi2_pval = chi2_pval)
 
 
 
