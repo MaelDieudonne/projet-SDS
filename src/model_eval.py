@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from collections import Counter
+from itertools import combinations
 from scipy.spatial.distance import cdist
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.metrics.pairwise import pairwise_distances
@@ -116,20 +117,16 @@ def get_metrics(model, params, n, data, pred_clust, **additional_metrics):
 
 ##### For LCA #####
 
-# Compute local L2 and Chi2
-def local_stats(data, post_probs, coeffs, var1, var2):
+# BVRs
+def bvr(data, post_probs, coeffs, var1, var2):
     # Get number of classes and observations
     n_classes = post_probs.shape[1]
     n_obs = len(data)
     
-    # Get observed contingency table
-    observed = pd.crosstab(data[var1], data[var2])
-    observed = observed.reindex(index=[0,1], columns=[0,1], fill_value=0)
-    
     # Calculate expected frequencies under the model
     expected = np.zeros((2, 2))
     
-    # For each class
+    # For each class...
     for k in range(n_classes):
         # Get class membership probability
         class_prob = post_probs[:, k].mean()
@@ -145,26 +142,27 @@ def local_stats(data, post_probs, coeffs, var1, var2):
         expected[1, 1] += n_obs * prob_var1 * prob_var2 * class_prob 
         
     expected = pd.DataFrame(expected)
-    
-    # Calculate l2 and chi2 contributions, eliminating errors caused by log(0)
-    array = np.where((observed > 0) & (expected > 0), observed / expected, 1)
-    local_l2 = (2 * observed * np.log(array)).sum().sum()
-    local_chi2 = (((observed - expected) ** 2) / expected).sum().sum()
+    try: 
+        bvr = chi2_contingency(expected)[0]
+    except:
+        bvr = 0
 
-    return local_l2, local_chi2
+    return bvr
 
-
-# Compute global L2 and Chi2
-def global_stats(data, post_probs, coeffs):
+# BVRT
+def bvrt(data, post_probs, coeffs):
     variables = data.columns
-    global_l2 = 0
-    global_chi2 = 0
+    bvrt = 0
+    sig_bvr = 0
+
+    for var1, var2 in combinations(variables, 2):
+        if var1[:6] != var2[:6]:
+            residual = bvr(data, post_probs, coeffs, var1, var2)
+            bvrt += residual
+            sig_bvr += 1 if residual >= 3.84 else 0
+
+    V = data.shape[1]
+    bvrt_df = (V*(V-1)/2) * (5-1)**2
+    bvrt_pval = 1 - chi2.cdf(bvrt_stat, bvrt_df)
     
-    for i, var1 in enumerate(variables):
-        for j, var2 in enumerate(variables):
-            if i < j:
-                local_l2, local_chi2 = local_stats(data, post_probs, coeffs, var1, var2)
-                global_l2 += local_l2
-                global_chi2 += local_chi2
-    
-    return global_l2, global_chi2
+    return bvrt, bvrt_pval, sig_bvr

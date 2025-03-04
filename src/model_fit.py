@@ -3,11 +3,11 @@ import numpy as np
 import warnings
 
 from scipy.spatial.distance import cdist, mahalanobis
-from scipy.stats import chi2
+from scipy.stats import chi2, chi2_contingency
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
 from stepmix.stepmix import StepMix
 
-from src.model_eval import get_metrics, local_stats, global_stats
+from src.model_eval import get_metrics, bvr, bvrt
 
 
 
@@ -18,14 +18,14 @@ warnings.filterwarnings('ignore', module='sklearn.*', category=FutureWarning)
 
 def build_latent_model(n, msrt, covar):
     opt_params = {'method': 'gradient',
-              'intercept': True,
-              'max_iter': 500}
+                  'intercept': True,
+                  'max_iter': 500}
     
     if covar == 'without':
         latent_mod = StepMix(
             n_components = n,
             measurement = msrt,
-            n_init = 3,
+            n_init = 5,
             abs_tol=1e-4,
             rel_tol=1e-4,
             init_params = 'kmeans',
@@ -36,7 +36,7 @@ def build_latent_model(n, msrt, covar):
         latent_mod = StepMix(
             n_components = n,
             measurement = msrt,
-            n_init = 3,
+            n_init = 5,
             abs_tol=1e-4,
             rel_tol=1e-4,
             init_params = 'kmeans',
@@ -47,7 +47,7 @@ def build_latent_model(n, msrt, covar):
     return latent_mod
 
 
-def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
+def do_StepMix(data, controls, n, msrt, covar, refit=False):   
     latent_mod = build_latent_model(n, msrt, covar)      
     latent_mod.fit(data, controls)
     pred_clust = latent_mod.predict(data, controls)
@@ -69,18 +69,31 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
         classif_error =  (1 - mod_probs).sum() / len(data)
         
         if msrt == 'categorical':
-            # L2 and Chi2 stats with one-hot encoded data and p-val
-            l2_stat, chi2_stat = global_stats(bvr_data, post_probs, coeffs)
-            # L2 pval
-            l2_pval = 1 - chi2.cdf(l2_stat, mod_df)
-            # Chi2 df with original data
-            V = data.shape[1]
-            chi2_df = (V*(V-1)/2) * (5-1)**2
-            # Chi2 pval
-            chi2_pval = 1 - chi2.cdf(chi2_stat, chi2_df)
+            predicted = pd.DataFrame()
+            df = []
+            for var in data.columns:
+                for i in range(5):
+                    var_f = f'{var}_{i}'
+                    col = np.zeros(data.shape[0])
+                    for k in range(n):
+                        coeff_id = (coeffs['class_no'] == k) & (coeffs['variable'] == var_f)
+                        try: coeff_value = coeffs.loc[coeff_id, 'value'].values[0]
+                        except: coeff_value = 0
+                        col += coeff_value * post_probs[:, k]
+                    df.append(pd.DataFrame(col, columns=[var_f]))
+                temp = pd.concat(df, axis=1)
+                temp = temp.apply(lambda row: (row == row.max()).astype(int), axis=1)
+                temp = temp.idxmax(axis=1).str.extract(r'(\d+)').astype(int).squeeze()
+                temp = pd.DataFrame(temp.tolist(), columns=[var])
+                predicted = pd.concat([predicted, temp], axis=1)
+
+            flat1 = data.to_numpy()
+            flat2 = predicted.to_numpy()
+            contingency = pd.crosstab(flat1, flat2)
+            chi2_stat = chi2_contingency(contingency)[0]
+            chi2_pval = chi2_contingency(contingency)[1]
+
         else:
-            l2_stat = np.nan
-            l2_pval = np.nan
             chi2_stat = np.nan
             chi2_pval = np.nan
     
@@ -97,8 +110,6 @@ def do_StepMix(data, controls, bvr_data, n, msrt, covar, refit=False):
             classif_error = classif_error,
             df = mod_df,
             LL = latent_mod.score(data, controls),
-            l2_stat = l2_stat,
-            l2_pval = l2_pval,
             chi2_stat = chi2_stat,
             chi2_pval = chi2_pval)
 
