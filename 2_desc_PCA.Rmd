@@ -8,9 +8,168 @@ data2004_f <- read_parquet("data/data2004_f.parquet")
 data2004_i <- read_parquet("data/data2004_i.parquet")
 ```
 
-On se limite pour l'instant aux données concernant l'année 2004.
+```{r}
+# Items used by B&M
+q2_vars <- c('clseusa')
+q3_vars <- c('ambornin', 'amcit', 'amlived', 'amenglsh', 'amchrstn', 'amgovt', 'amfeel')
+q4_vars <- c('amcitizn', 'amshamed', 'belikeus', 'ambetter', 'ifwrong')
+q5_vars = c('proudsss', 'proudgrp', 'proudpol', 'prouddem', 'proudeco', 'proudspt', 'proudart', 'proudhis', 'proudmil', 'proudsci')
 
-# ACP
+# All items
+# q2_vars <- c('clsetown', 'clsestat', 'clseusa', 'clsenoam')
+# q3_vars <- c(q3_vars, 'amancstr')
+# q4_vars <- c(q4_vars, 'amsports', 'lessprd') # with all items
+
+q2_vars_f <- paste0(q2_vars, "_f")
+q3_vars_f <- paste0(q3_vars, "_f")
+q4_vars_f <- paste0(q4_vars, "_f")
+q5_vars_f <- paste0(q5_vars, "_f")
+
+q2_vars_n <- paste0(q2_vars, "_n")
+q3_vars_n <- paste0(q3_vars, "_n")
+q4_vars_n <- paste0(q4_vars, "_n")
+q5_vars_n <- paste0(q5_vars, "_n")
+
+f_outcomes <- c(q2_vars_f, q3_vars_f, q4_vars_f, q5_vars_f)
+n_outcomes <- c(q2_vars_n, q3_vars_n, q4_vars_n, q5_vars_n)
+```
+
+# Outcomes
+
+## Table
+
+```{r}
+likert_table <- 
+  list(
+    data2004_i %>% tbl_likert(include = all_of(f_outcomes)),
+    tbl_wide_summary(
+      data2004_i|> mutate(across(all_of(f_outcomes), \(x) unclass(x))),
+      statistic = c("{mean}", "{sd}", "{N_nonmiss}"),
+      type = ~ "continuous",
+      include = all_of(f_outcomes),
+      digits = ~ 1)) %>%
+  tbl_merge(tab_spanner = FALSE) %>%
+  as_gt(rownames_to_stub = TRUE) %>%
+  
+  # Shortening of labels
+  fmt(columns = "label", fns = function(x) {
+    str_to_sentence( # Capitalize first letter
+      str_remove(x, "^How (close|important|proud) \\.\\.\\.") # Remove first characters
+    )}) %>%
+  fmt(columns = "stat_3_2", fns = function(x) str_sub(x, 1, -3)) %>%
+
+  # Grouping of questions
+  tab_row_group(label = "How close do you feel to?", rows = which(.data$variable %in% q2_vars_f), id = "close") %>%
+  tab_row_group(label = "How important do you think each of the following is?", rows = which(.data$variable %in% q3_vars_f), id = "imp") %>%
+  tab_row_group(label = "How much do you agree or disagree with the following statements?", rows = which(.data$variable %in% q4_vars_f), id = "agree") %>%
+  tab_row_group(label = "How proud are you of America in each of the following?", rows = which(.data$variable %in% q5_vars_f), id = "proud") %>%
+  row_group_order(c("close", "imp", "agree", "proud")) %>%
+
+  # Styling  
+  tab_style(
+    style = list(
+      cell_fill(color = "lightgrey"),
+      cell_text(style = "italic", weight = "bold")),
+    location = cells_row_groups())  %>%
+  tab_style(
+    style = cell_borders(sides = "left", style = "dashed", color = "black"),
+    locations = list(
+      cells_column_labels(columns = "stat_1_1" | "stat_1_2" | "stat_3_2"),
+      cells_body(columns = "stat_1_1" | "stat_1_2" | "stat_3_2")))
+
+likert_table
+```
+
+## Likert plots
+
+```{r include=FALSE}
+plot <- gglikert(data2004_f,
+                 include = all_of(f_outcomes),
+                 sort = "ascending") +
+  scale_fill_brewer(palette = "RdYlBu")
+
+ggsave("output/desc/likert_plot_2004.png", plot = plot, width = 10, height = 8, dpi = 300)
+```
+
+```{r include=FALSE}
+likert_data <- read_parquet("data/data2004_f.parquet") %>%
+  set_variable_labels(
+    clseusa_f = '... America',
+    clsetown_f = 'Your town or city',
+    clsestat_f = 'Your state',
+    clsenoam_f = 'North America') %>%
+set_variable_labels(
+    ambornin_f = 'To have been born in America',
+    amcit_f = 'To have American citizenship',
+    amlived_f = 'To have lived in America for most of one\'s life',
+    amenglsh_f = 'To be able to speak English',
+    amchrstn_f = 'To be a Christian',
+    amgovt_f = 'To respect America\'s political institutions and laws',
+    amfeel_f = 'To feel American',
+    amancstr_f = 'To have American ancestry') %>%
+  set_variable_labels(
+    amcitizn_f = 'I would rather be a citizen of America than of any other country in the world',
+    belikeus_f = 'The world would be a better place if people from other countries were more like the Americans',
+    ambetter_f = 'Generally speaking, America is a better country than most other countries',
+    ifwrong_f = 'People should support their country even if their country is in the wrong',
+    amshamed_f = 'There are some things about America today that make me feel ashamed of America',
+    amsports_f = 'When my country does well in international sports, it makes me proud to be American',
+    lessprd_f = 'I am often less proud of America than I would like to be') %>%
+  set_variable_labels(
+    prouddem_f = 'The way democracy works',
+    proudpol_f = 'Its political influence in the world',
+    proudeco_f = 'America\'s economic achievements',
+    proudsss_f = 'Its social security system',
+    proudsci_f = 'Its scientific and technological achievements',
+    proudspt_f = 'Its achievements in sports',
+    proudart_f = 'Its achievements in the arts & literature',
+    proudmil_f = 'America\'s armed forces',
+    proudhis_f = 'Its history',
+    proudgrp_f = 'Its fair and equal treatment of all groups in society')
+
+p1 <- gglikert(likert_data, include = all_of(q2_vars_f), sort = "ascending", add_totals = FALSE) +
+  scale_x_continuous(labels = function(x) abs(x)*100, limits = c(-0.51, 1)) + 
+  scale_fill_brewer(palette = "RdYlBu") + 
+  ggtitle("How close do you feel to?") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5, face = "bold"))
+
+p2 <- gglikert(likert_data, include = all_of(q3_vars_f), sort = "ascending", add_totals = FALSE) +
+  scale_x_continuous(labels = function(x) abs(x)*100, limits = c(-0.51, 1)) + 
+  scale_fill_brewer(palette = "RdYlBu") +
+  ggtitle("How important do you think each of the following is?") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5, face = "bold"))
+
+p3 <- gglikert(likert_data, include = all_of(q4_vars_f), sort = "ascending", add_totals = FALSE) + 
+  scale_x_continuous(labels = function(x) abs(x)*100, limits = c(-0.51, 1)) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  ggtitle("How much do you agree or disagree with the following statements?") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+p4 <- gglikert(likert_data, include = all_of(q5_vars_f), sort = "ascending", add_totals = FALSE) + 
+  scale_x_continuous(labels = function(x) abs(x)*100, limits = c(-0.51, 1)) +
+  scale_fill_brewer(palette = "RdYlBu") +
+  ggtitle("How proud are you of America in each of the following?") +
+  theme(legend.position = "none",
+        plot.title = element_text(hjust = 0.5, face = "bold"))
+
+plot <- ggpubr::ggarrange(p1, p2, p3, p4, 
+                          nrow=4, 
+                          ncol=1,
+                          common.legend = TRUE,
+                          legend = "bottom",
+                          align = "hv",
+                          heights = c(
+                            max(0.22, length(q2_vars_f)*0.11),
+                            max(0.22, length(q3_vars_f)*0.11),
+                            max(0.22, length(q4_vars_f)*0.11),
+                            max(0.22, length(q5_vars_f)*0.11)))
+
+ggsave("output/desc/likert_plots_2004.png", plot = plot, width = 10, height = 15, dpi = 300)
+```
+
+## PCA
 
 Il faut bien décider / justifier de scaler ou pas (scale.unit = TRUE / FALSE). 
 
@@ -123,7 +282,7 @@ gtsave(axis_tbl, filename = "contrib_axes.docx", path = "output/acp/")
 draw_corrplot(t(pca_results$var$contrib[, 1:10]/100), "Contribution des variables à l'inertie des axes", "", "output/acp/contrib_axes.png", range = c(0,1))
 
 ## ... ou de graphs
-contrib_1 <- fviz_contrib(pca_results, choice = "var", axes = 1, top = 10)
+contrib_1 <- fviz_contrib(pca_results, choice = "var", axes = 1, top = 30)
 contrib_1$layers[[1]]$aes_params$fill <- "lightskyblue"
 contrib_1$layers[[1]]$aes_params$colour <- "cornflowerblue"
 contrib_1$layers[[2]]$aes_params$colour <- "darkblue"
@@ -132,7 +291,7 @@ contrib_1$theme$plot.title$hjust <- 0.5
 contrib_1
 ggsave("output/acp/contrib_axe_1.png", plot = contrib_1)
 
-contrib_2 <- fviz_contrib(pca_results, choice = "var", axes = 2, top = 10)
+contrib_2 <- fviz_contrib(pca_results, choice = "var", axes = 2, top = 30)
 contrib_2$layers[[1]]$aes_params$fill <- "lightskyblue"
 contrib_2$layers[[1]]$aes_params$colour <- "cornflowerblue"
 contrib_2$layers[[2]]$aes_params$colour <- "darkblue"
@@ -191,174 +350,4 @@ ggsave("output/acp/proj_ind_zoom.png", plot = proj_ind)
 ## Qualité de représentation des variables
 draw_corrplot(t(pca_results$var$cos2[, 1:5]), "Qualité de représentation", "des outcomes", "output/acp/qual_rep_outc.png", range = c(0,1))
 draw_corrplot(t(pca_results$quali.sup$cos2[, 1:5]), "Qualité de représentation", "des régresseurs", "output/acp/qual_rep_régr.png", range = c(0,1))
-```
-
-# kmeans
-
-https://www.datanovia.com/en/blog/types-of-clustering-methods-overview-and-quick-start-r-code/
-https://bookdown.org/evraloui/lbira2110/clustering.html
-
-FUNcluster 	= a partitioning function which accepts as first argument a (data) matrix like x, second argument, say k, k >= 2, the number of clusters desired, and returns a list with a component named cluster which contains the grouping of observations. Allowed values include: 
-kmeans, 
-cluster::pam, 
-cluster::clara, 
-cluster::fanny, # Fuzzy kmeans
-cluster::hcut, # Classification ascendante hiérarchique
-etc.
-
-```{r eval=FALSE}
-data_km <- data2004_i %>% select(n_outcomes) %>% na.omit() %>% scale()
-
-fviz_nbclust(data_km, 
-             FUNcluster = cluster::pam, 
-             method = "gap_stat") +
-  theme(plot.title = element_text(hjust = 0.5))
-
-fviz_nbclust(data_km, 
-             FUNcluster = cluster::pam, 
-             method='silhouette') +
-  theme(plot.title = element_text(hjust = 0.5))
-
-fviz_nbclust(data_km, 
-             FUNcluster = cluster::pam, 
-             method='wss') +
-  theme(plot.title = element_text(hjust = 0.5))
-
-results_km <- cluster::pam(data_km, 2, nstart = 25)
-results_km <- kmeans(data_km, 4, nstart = 25)
-
-fviz_cluster(results_km, 
-             data = data_km,
-             labelsize = 0,
-             palette = c("#00AFBB", "#2E9FDF", "#E7B800", "#FC4E07"),
-             ggtheme = theme_minimal(),
-             main = "Partitioning Clustering Plot") +
-  theme(plot.title = element_text(hjust = 0.5)) 
-```
-
-# DBScan
-
-```{r}
-library("fpc")
-db_results <- fpc::dbscan(data_km, eps = 4, MinPts = 5)
-
-fviz_cluster(db_results,
-             data = data_km,
-             stand = FALSE,
-             ellipse = TRUE,
-             show.clust.cent = TRUE,
-             geom = "point",
-             palette = "jco")
-
-print(db_results)
-
-print(paste("Number of clusters:", length(unique(db_results$cluster[db_results$cluster != 0]))))
-print(paste("Number of noise points:", sum(db_results$cluster == 0)))
-```
-
-# LCA
-
-```{r}
-data2004_i <- read_parquet("data/data2004_i.parquet")
-library(tidySEM)
-```
-
-```{r}
-lpa.data <- data2004_i %>% select(all_of(n_outcomes))
-lpa.res <- mx_profiles(data = lpa.data, classes = 1:8)
-fit <- table_fit(lpa.res)
-
-write_parquet(fit, "output/lpa_res.parquet")
-
-fit %>%
-  select(Classes, LL, Parameters, AIC, BIC) %>%
-  gt() %>%
-  fmt_number(c(LL, AIC, BIC), decimals = 1) %>%
-  tab_style(
-    style = cell_fill(
-      color = "lightgreen",
-      alpha = 0.7),
-    locations = cells_body(
-      columns = AIC,
-      rows = AIC == min(AIC, na.rm = TRUE))) %>%
-  tab_style(
-    style = cell_fill(
-      color = "lightgreen",
-      alpha = 0.7),
-    locations = cells_body(
-      columns = BIC,
-      rows = BIC == min(BIC, na.rm = TRUE))) %>%
-  tab_style(
-    style = list(
-      cell_text(weight = "bold", style = "italic"),
-      cell_text(align = "center")),
-    locations = cells_column_labels(everything())) %>%
-  tab_style(
-    style = cell_text(align = "center"),
-    locations = cells_body())
-```
-
-```{r}
-predict.probs <- class_prob(lpa.res$`equal var 2`)
-predict.probs$sum.posterior %>%
-  gt() %>%
-  fmt_number(count, decimals = 0) %>%
-  fmt_number(proportion, decimals = 3) %>%
-  tab_style(
-    style = list(
-      cell_text(weight = "bold", style = "italic"),
-      cell_text(align = "center")),
-    locations = cells_column_labels(everything()))
-
-mg_probs <-
-  rbind(
-    lpa.res$`equal var 2`$output$matrices$class1.M,
-    lpa.res$`equal var 2`$output$matrices$class2.M) %>%
-  as.data.frame() %>%
-  mutate(class = row_number()) %>%
-  setNames(c(outcomes, "p.class")) %>%
-  pivot_longer(
-    cols = -p.class,
-    names_to = "Column",
-    values_to = "Value") %>%
-  pivot_wider(
-    names_from = p.class,
-    values_from = Value) %>%
-  rename(
-    Outcome = "Column",
-    "Class 1" = "1",
-    "Class 2" = "2") %>%
-  gt() %>%
-  fmt_number(decimals = 1) %>%
-  tab_style(
-    style = list(
-      cell_text(weight = "bold", style = "italic"),
-      cell_text(align = "center")),
-    locations = cells_column_labels(everything()))
-mg_probs
-
-plot_profiles(lpa.res$`equal var 4`)
-```
-
-
-```{r}
-lpa.data <- data2004_i %>% select(all_of(n_outcomes))
-lpa.res <- mx_profiles(data = lpa.data, classes = 1:8)
-fit <- table_fit(lpa.res)
-
-predictions = as.data.frame(matrix(nrow=1215, ncol=0))
-probs <- class_prob(lpa.res$`equal var 2`)
-predictions <- cbind(
-  predictions,
-  probs$individual %>% as.data.frame() %>% select(predicted) %>% rename(K2 = predicted))
-
-predictions <- as.data.frame(matrix(nrow=1215, ncol=0))
-for (i in 1:8) {
-  probs <- class_prob(lpa.res[[paste0("equal var ", i)]])
-  predictions <- cbind(
-    predictions,
-    probs$individual %>% as.data.frame() %>% select(predicted) %>% rename(!!paste0("K", i) := predicted)
-  )
-}
-write_parquet(predictions, "output/lpa_predictions.parquet")
 ```

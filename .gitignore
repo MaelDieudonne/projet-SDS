@@ -10,3 +10,10 @@
 .csv
 
 .pyc
+
+.DS_Store
+.ipynb_checkpoints
+.jupyter
+
+/output/
+/data/source/
