@@ -2,30 +2,32 @@ import pandas as pd
 import numpy as np
 import warnings
 
-from stepmix.stepmix import StepMix
 from scipy.spatial.distance import cdist, mahalanobis
+from scipy.stats import chi2, chi2_contingency
 from sklearn.cluster import AgglomerativeClustering, HDBSCAN
+from stepmix.stepmix import StepMix
 
-from src.model_eval import get_metrics
+from src.model_eval import get_metrics, bvr, bvrt
+
+
+
+##### Latent models #####
 
 # Avoid warnings because of deprecated functions in StepMix
 warnings.filterwarnings('ignore', module='sklearn.*', category=FutureWarning)
 
-
-
-# Latent models
-opt_params = {
-    'method': 'gradient',
-    'intercept': True,
-    'max_iter': 1000,
-}
-
-def do_StepMix(data, controls, n, msrt, covar, refit=False):
+def build_latent_model(n, msrt, covar):
+    opt_params = {'method': 'gradient',
+                  'intercept': True,
+                  'max_iter': 500}
+    
     if covar == 'without':
         latent_mod = StepMix(
             n_components = n,
             measurement = msrt,
-            n_init = 3,
+            n_init = 5,
+            abs_tol=1e-4,
+            rel_tol=1e-4,
             init_params = 'kmeans',
             structural_params = opt_params,
             progress_bar = 0)
@@ -34,30 +36,87 @@ def do_StepMix(data, controls, n, msrt, covar, refit=False):
         latent_mod = StepMix(
             n_components = n,
             measurement = msrt,
-            n_init = 3,
+            n_init = 5,
+            abs_tol=1e-4,
+            rel_tol=1e-4,
             init_params = 'kmeans',
             structural = 'covariate',
             structural_params = opt_params,
-            progress_bar = 1)
-            
+            progress_bar = 0)
+
+    return latent_mod
+
+
+def do_StepMix(data, controls, n, msrt, covar, refit=False):   
+    latent_mod = build_latent_model(n, msrt, covar)      
     latent_mod.fit(data, controls)
     pred_clust = latent_mod.predict(data, controls)
-        
-    model = 'latent'
-    params = {'msrt': msrt, 'covar': covar}
-    df = latent_mod.n_parameters
-    loglik = latent_mod.score(data, controls)
-    aic = latent_mod.aic(data, controls)
-    bic = latent_mod.bic(data, controls)
-    entropy = latent_mod.entropy(data, controls)
-        
+
     if refit == True: 
         return pred_clust
-    else: 
-        return get_metrics(model, params, n, data, pred_clust, aic = aic, bic = bic, entropy = entropy, df = df, LL = loglik)
+
+    else:
+        mod_df = latent_mod.n_parameters
+        
+        # Extract model coefficients
+        coeffs = latent_mod.get_parameters_df()
+        coeffs = coeffs.reset_index()
+        coeffs = coeffs[['class_no', 'variable', 'value']]
+        # Extract posterior and modal probabilities
+        post_probs = latent_mod.predict_proba(data, controls)
+        mod_probs = np.max(post_probs, axis=1)
+        # Compute classification error
+        classif_error =  (1 - mod_probs).sum() / len(data)
+        
+        if msrt == 'categorical':
+            predicted = pd.DataFrame()
+            df = []
+            for var in data.columns:
+                for i in range(5):
+                    var_f = f'{var}_{i}'
+                    col = np.zeros(data.shape[0])
+                    for k in range(n):
+                        coeff_id = (coeffs['class_no'] == k) & (coeffs['variable'] == var_f)
+                        try: coeff_value = coeffs.loc[coeff_id, 'value'].values[0]
+                        except: coeff_value = 0
+                        col += coeff_value * post_probs[:, k]
+                    df.append(pd.DataFrame(col, columns=[var_f]))
+                temp = pd.concat(df, axis=1)
+                temp = temp.apply(lambda row: (row == row.max()).astype(int), axis=1)
+                temp = temp.idxmax(axis=1).str.extract(r'(\d+)').astype(int).squeeze()
+                temp = pd.DataFrame(temp.tolist(), columns=[var])
+                predicted = pd.concat([predicted, temp], axis=1)
+
+            flat1 = data.to_numpy()
+            flat2 = predicted.to_numpy()
+            contingency = pd.crosstab(flat1, flat2)
+            chi2_stat = chi2_contingency(contingency)[0]
+            chi2_pval = chi2_contingency(contingency)[1]
+
+        else:
+            chi2_stat = np.nan
+            chi2_pval = np.nan
+    
+        return get_metrics(
+            model = 'latent',
+            params = {'msrt': msrt, 'covar': covar},
+            n = n,
+            data = data,
+            pred_clust = pred_clust,
+            aic = latent_mod.aic(data, controls),
+            bic = latent_mod.bic(data, controls),
+            sabic = latent_mod.sabic(data, controls),
+            relative_entropy = latent_mod.relative_entropy(data, controls),
+            classif_error = classif_error,
+            df = mod_df,
+            LL = latent_mod.score(data, controls),
+            chi2_stat = chi2_stat,
+            chi2_pval = chi2_pval)
 
 
-# k-means
+
+##### k-means #####
+
 class FlexibleKMeans:
     """
     K-Means implementation supporting different distance metrics and center computation methods.
@@ -221,6 +280,7 @@ class FlexibleKMeans:
         distances = self._compute_distances(X, self.cluster_centers_)
         return np.argmin(distances, axis=1)
 
+    
 def do_kmeans(data, n, dist, link, refit=False):
     kmeans = FlexibleKMeans(
         n_clusters = n,
@@ -239,7 +299,9 @@ def do_kmeans(data, n, dist, link, refit=False):
         return get_metrics(model, params, n, data, pred_clust)
 
 
-# AHC
+    
+##### AHC #####
+
 def do_AHC(data, n, dist, link, refit=False):
     ahc = AgglomerativeClustering(
         n_clusters = n,
@@ -258,7 +320,9 @@ def do_AHC(data, n, dist, link, refit=False):
         return get_metrics(model, params, n, data, pred_clust)
 
 
-# HDBSCAN
+
+##### HDBSCAN #####
+
 def do_hdbscan(data, dist, min_clust, min_smpl, refit=False):
     if dist == 'mahalanobis':
         cov_matrix = np.cov(data, rowvar=False)  # Compute covariance

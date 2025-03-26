@@ -1,13 +1,16 @@
 import numpy as np
+import pandas as pd
 
 from collections import Counter
+from itertools import combinations
 from scipy.spatial.distance import cdist
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.metrics.pairwise import pairwise_distances
 
 
+##### For all models #####
 
-# Functions to avoid throwing errors when the CVI is undefined
+# Avoid throwing errors when a CVI is undefined
 def sil_score(data, pred_clust):
     try: 
         sil_score = silhouette_score(data, pred_clust, metric='manhattan')
@@ -31,7 +34,7 @@ def db_score(data, pred_clust):
 
 
 # Function to compute the Dunn score 43
-def dunn_score(data, pred_clust, metric='euclidean'):
+def dunn_score(data, pred_clust, metric='cityblock'):
     data = np.asarray(data)
     pred_clust = np.asarray(pred_clust)
     clusters = np.unique(pred_clust)
@@ -78,7 +81,7 @@ def dunn_score(data, pred_clust, metric='euclidean'):
     return dunn_score
 
 
-# Return clusters min an max sizes
+# Clusters min an max sizes
 def clust_size(pred_clust):
     cluster_sizes = Counter(pred_clust)
     min_size = min(cluster_sizes.values())
@@ -109,3 +112,57 @@ def get_metrics(model, params, n, data, pred_clust, **additional_metrics):
 
     base_metrics.update(additional_metrics)
     return base_metrics
+
+
+
+##### For LCA #####
+
+# BVRs
+def bvr(data, post_probs, coeffs, var1, var2):
+    # Get number of classes and observations
+    n_classes = post_probs.shape[1]
+    n_obs = len(data)
+    
+    # Calculate expected frequencies under the model
+    expected = np.zeros((2, 2))
+    
+    # For each class...
+    for k in range(n_classes):
+        # Get class membership probability
+        class_prob = post_probs[:, k].mean()
+    
+        # Get probabilities for var1 and var 2 in class k
+        prob_var1 = coeffs[(coeffs['class_no'] == k) & (coeffs['variable'] == var1)]['value'].values.item()
+        prob_var2 = coeffs[(coeffs['class_no'] == k) & (coeffs['variable'] == var2)]['value'].values.item()
+
+        # Calculate expected frequencies for this class
+        expected[0, 0] += n_obs * (1 - prob_var1) * (1 - prob_var2) * class_prob
+        expected[0, 1] += n_obs * (1 - prob_var1) * prob_var2 * class_prob
+        expected[1, 0] += n_obs * prob_var1 * (1 - prob_var2) * class_prob
+        expected[1, 1] += n_obs * prob_var1 * prob_var2 * class_prob 
+        
+    expected = pd.DataFrame(expected)
+    try: 
+        bvr = chi2_contingency(expected)[0]
+    except:
+        bvr = 0
+
+    return bvr
+
+# BVRT
+def bvrt(data, post_probs, coeffs):
+    variables = data.columns
+    bvrt = 0
+    sig_bvr = 0
+
+    for var1, var2 in combinations(variables, 2):
+        if var1[:6] != var2[:6]:
+            residual = bvr(data, post_probs, coeffs, var1, var2)
+            bvrt += residual
+            sig_bvr += 1 if residual >= 3.84 else 0
+
+    V = data.shape[1]
+    bvrt_df = (V*(V-1)/2) * (5-1)**2
+    bvrt_pval = 1 - chi2.cdf(bvrt_stat, bvrt_df)
+    
+    return bvrt, bvrt_pval, sig_bvr

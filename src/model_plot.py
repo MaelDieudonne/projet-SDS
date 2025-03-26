@@ -2,13 +2,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from sklearn.decomposition import PCA
 from scipy.spatial import ConvexHull
+from sklearn.decomposition import PCA
 
 
 
 # Plot datapoints and clusters
-def plot_clusters(data, pred_clust, title):
+def plot_clusters(data, pred_clust, title, filename):
     unique_clusters, counts = np.unique(pred_clust, return_counts=True) # Identify clusters
     cluster_sizes = dict(zip(unique_clusters, counts)) # Map their label to their size
     
@@ -17,7 +17,7 @@ def plot_clusters(data, pred_clust, title):
     reduced_space = pca.fit_transform(data)
     explained_var = pca.explained_variance_ratio_ * 100
 
-    plt.figure(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8,6))
 
     # Collect all hull vertices for clusters
     hull_vertices = []
@@ -68,10 +68,14 @@ def plot_clusters(data, pred_clust, title):
         handles.append(plt.Line2D([0], [0], marker='*', color='gray', linestyle='None', markersize=10))
         new_labels.append("Noise")
 
+    ax.axhline(y=0, color='grey', linestyle='dashed', linewidth=1)
+    ax.axvline(x=0, color='grey', linestyle='dashed', linewidth=1)
     plt.legend(handles, new_labels, title="")
     plt.xlabel(f"Dim. 1 — {explained_var[0]:.2f}%")
     plt.ylabel(f"Dim. 2 — {explained_var[1]:.2f}%")
     plt.title(title)
+
+    plt.savefig(f'output/plots/{filename}.png', format='png')
     plt.show()
 
 
@@ -81,6 +85,7 @@ def plot_cluster_profiles(features,
                           feature_names, 
                           sd,
                           title,
+                          filename,
                           class_names = None,
                           alpha=0.4):
     """
@@ -188,4 +193,6 @@ def plot_cluster_profiles(features,
     ax.axhline(y=0, color='grey', linestyle='dashed', linewidth=1)
     ax.set_title(f"Answer Patterns (mean ± {sd} sd) within the Best Partition According to the {title} Index")
     plt.tight_layout()
+
+    plt.savefig(f'output/plots/{filename}.png', format='png')
     plt.show()
